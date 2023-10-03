@@ -723,3 +723,21 @@ optimal avg acc0.5395739512538532
 optimal layer count:  Counter({9: 42, 7: 31, 8: 27, 0: 6, 6: 3, 2: 2, 1: 1})
 
 ```
+
+
+
+# layerATT
+
+所有语言training
+只微调最后的attention层
+
+```shell
+# zh-training
+optimized bucc f1: 0.0807825812559167, threshold: 0.07966890931129456, best_recall: 0.2469720905739863, best_precision: 0.10078740157480315
+(0.0807825812559167, 0.2469720905739863)
+
+# fr-sample
+optimized bucc f1: 0.10968660968660969, threshold: 0.07685703039169312, best_recall: 0.39289558665231433, best_precision: 0.08195848855774349
+(0.10968660968660969, 0.39289558665231433)
+
+```

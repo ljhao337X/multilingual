@@ -7,6 +7,15 @@ import random
 # 这里的中文是繁体
 BUCC_LAN = ['zh', 'de', 'fr', 'ru']
 LAYER_LIST = {13: [1, 5, 7, 8, 9, 12], 25: [1, 5, 10, 15, 20, 24]}
+lang3_dict = {'ara': 'ar', 'heb': 'he', 'vie': 'vi', 'ind': 'id',
+              'jav': 'jv', 'tgl': 'tl', 'eus': 'eu', 'mal': 'ml', 'tam': 'ta',
+              'tel': 'te', 'afr': 'af', 'nld': 'nl', 'eng': 'en', 'deu': 'de',
+              'ell': 'el', 'ben': 'bn', 'hin': 'hi', 'mar': 'mr', 'urd': 'ur',
+              'tam': 'ta', 'fra': 'fr', 'ita': 'it', 'por': 'pt', 'spa': 'es',
+              'bul': 'bg', 'rus': 'ru', 'jpn': 'jp', 'kat': 'ka', 'kor': 'ko',
+              'tha': 'th', 'swh': 'sw', 'cmn': 'zh', 'kaz': 'kk', 'tur': 'tr',
+              'est': 'et', 'fin': 'fi', 'hun': 'hu', 'pes': 'fa', 'aze': 'az',
+              'lit': 'lt', 'pol': 'pl', 'ukr': 'uk', 'ron': 'ro'}
 
 
 def _duplicate_id2first(file):
@@ -38,7 +47,7 @@ def _get_duplicate(language='zh', data_type='training'):
 
     duplicate_lang = _duplicate_id2first(file_handler_lang)
     duplicate_en = _duplicate_id2first(file_handler_en)
-    print(f'duplicate {language} sents: {len(duplicate_lang)}, en sents" {len(duplicate_en)}')
+    print(f'duplicate {language} sents: {len(duplicate_lang)}, en sents: {len(duplicate_en)}')
     return duplicate_lang, duplicate_en
 
 # bucc中句子数量远多于gold
@@ -210,7 +219,6 @@ def save_embedding_file(model_name, embeds_lang, embeds_en, data_type='training'
             embeds_file_lang = file_folder + f'{model_name}_{language}_{data_type}_{i}.npy'
             embeds_file_en = file_folder + f'{model_name}_en_{data_type}_{i}.npy'
 
-
             np.save(embeds_file_lang, embeds_lang[i])
             np.save(embeds_file_en, embeds_en[i])
             print(embeds_file_lang, embeds_file_en)
@@ -218,7 +226,7 @@ def save_embedding_file(model_name, embeds_lang, embeds_en, data_type='training'
         return file_folder
 
 
-def load_bucc_embeddings(language, model_name, layer, data_type='training'):
+def load_bucc_embeddings(language, model_name, layer=None, data_type='training'):
     '''
     :param language:
     :param model_name:
@@ -226,31 +234,28 @@ def load_bucc_embeddings(language, model_name, layer, data_type='training'):
     :param data_type:
     :return: embedding_lang, embedding_en
     '''
-    file_folder = f'./dataset/bucc/bucc2017/{language}-en/'
+    file_folder = f'./dataset/bucc/bucc2018/{language}-en/'
 
     if model_name == 'laser':
-        if data_type == 'sample':
-            file_folder = f'./dataset/bucc/bucc2018/{language}-en/'
-            file_lang = file_folder + f'laser_{language}_{data_type}_{layer}.npy'
-            file_en = file_folder + f'laser_en_{data_type}_{layer}.npy'
-        else:
-            file_lang = file_folder + f'laser_{language}_{layer}.npy'
-            file_en = file_folder + f'laser_en_{layer}.npy'
+
+        file_lang = file_folder + f'laser_{language}_{layer}.npy'
+        file_en = file_folder + f'laser_en_{layer}.npy'
 
         assert os.path.exists(file_lang) and os.path.exists(file_en), f'loading path {file_lang} {file_en} do not exist'
         lang = np.fromfile(file_lang, dtype=np.float32)
         en = np.fromfile(file_en, dtype=np.float32)
         return np.reshape(lang, (-1, 1024)), np.reshape(en, (-1, 1024))
 
+    elif 'att' in model_name:
+        assert layer is None, 'wrongly assign a layer to att_model'
+        file_lang = file_folder + f'{model_name}_{language}_{data_type}.npy'
+        file_en = file_folder + f'{model_name}_en_{data_type}.npy'
+        assert os.path.exists(file_lang) and os.path.exists(file_en), f'loading path {file_lang} {file_en} do not exist'
+        return np.load(file_lang), np.load(file_en)
 
     else: # other model
-        if data_type == 'sample':
-            file_folder = f'./dataset/bucc/bucc2018/{language}-en/'
-            file_lang = file_folder + f'{model_name}_{language}_{data_type}_{layer}.npy'
-            file_en = file_folder + f'{model_name}_en_{data_type}_{layer}.npy'
-        else: # training
-            file_lang = file_folder + f'{model_name}_{language}_{layer}.npy'
-            file_en = file_folder + f'{model_name}_en_{layer}.npy'
+        file_lang = file_folder + f'{model_name}_{language}_{layer}.npy'
+        file_en = file_folder + f'{model_name}_en_{layer}.npy'
 
         assert os.path.exists(file_lang) and os.path.exists(file_en), f'loading path {file_lang} {file_en} do not exist'
         print(f'load {file_lang}, {file_en}')

@@ -1,21 +1,24 @@
-import torch
 import numpy as np
 import os
 import logging
-from tqdm import tqdm
 from typing import List, AnyStr
-from evaluate import load_model, MODEL_PATH, cls_pool_embedding, mean_pool_embedding, run_inference
-from bucc_dataset import get_bucc_sentence, save_embedding_file, load_bucc_embeddings, LAYER_LIST, Gold, filter_dup_embeddings, get_duplicate
+# from evaluate import load_model, MODEL_PATH, cls_pool_embedding, mean_pool_embedding, run_inference
+from bucc_dataset import get_bucc_sentence, save_embedding_file, load_bucc_embeddings, LAYER_LIST, Gold, filter_dup_embeddings
 from draw_pic import draw_bucc_pic, reduce_to_2d_pca, reduce_to_2d_tsne
 from evaluate_tools import generate_margin_k_similarity, bucc_optimize
 import argparse
 import matplotlib.pyplot as plt
 # from bucc_laser import embed_sentences
 
+'''
+to evaluate bucc results, nothing to do with extract embeddings
+its all about faiss
+'''
+
 
 BATCH_SIZE = 32
-gpu = True
-device = 'cuda:0' if torch.cuda.is_available() and gpu else 'cpu'
+# gpu = True
+# device = 'cuda:0' if torch.cuda.is_available() and gpu else 'cpu'
 MODEL_LAYER = {'XLM-R-LARGE': 25, 'XLM-R': 13, 'INFOXLM':13}
 from bucc_dataset import LAYER_LIST
 
@@ -135,22 +138,6 @@ def evaluate_on_gold(model_name='XLM-R', language='zh', layers=13, data_type='tr
 
 
 #---------------------------generate embeddings--------------------------------------------------
-def extract_embeddings_save(model_name='XLM-R', languages=['zh'], pool_type='cls', data_type='training', debug=True):
-    config, model, tokenizer = load_model(model_path=MODEL_PATH[model_name], device=device, output_hidden_states=True)
-    
-    for language in languages:
-        sentences_lang, sentences_en = get_bucc_sentence(language=language, data_type=data_type)
-        logger.info(f'read bucc {data_type} file {language}-en, total lines:{len(sentences_lang), len(sentences_en)}')
-        all_embeds_lang = run_inference(sentences_lang, model_name, config, model, tokenizer, language, pool_type=pool_type, debug=debug)
-        all_embeds_en = run_inference(sentences_en, model_name, config, model, tokenizer, 'en', pool_type=pool_type, debug=debug)
-
-        file_folder = save_embedding_file(model_name=model_name, embeds_lang=all_embeds_lang, embeds_en=all_embeds_en, data_type=data_type, language=language)
-        del all_embeds_lang, all_embeds_en
-
-        logger.info(f'saved file to {file_folder}')
-    return
-
-
 def combining_candidate_score(candidate_score1, candidate_score2, pooling='max'):
     '''
     candidate_score: list of (id, pred_pair_id, score)
@@ -199,15 +186,11 @@ def restore_index(lang_sent_id, en_sent_id, candidate_score):
         candidate_score[i] = [lang_sent_id[id1-1]+1, en_sent_id[id2-1]+1, score]
     return
 
-def generate_best_f1(model_name, language, layer, data_type, gold=None, cosine=True, margin=True, pooling='pooling'):
+def generate_best_f1(embeddings_lang, embeddings_en, gold=None, cosine=True, margin=True, pooling='pooling'):
     if gold is None:
         gold = Gold(language, data_type)
-    if pooling:
-        logger.info(f'evaluate on {model_name}, layer-{layer} in {language}-en bi-{pooling} setting')
-    else:
-        logger.info(f'evaluate on {model_name}, layer-{layer} in {language}-en setting')
 
-    embeddings_lang, embeddings_en = load_bucc_embeddings(language, model_name, layer, data_type=data_type)
+    # embeddings_lang, embeddings_en = load_bucc_embeddings(language, model_name, layer, data_type=data_type)
     lang_sent_id, en_sent_id = filter_dup_embeddings(embeddings_lang, embeddings_en, gold)
     candidate_and_score = generate_margin_k_similarity(embeddings_lang, embeddings_en, cosine=cosine, margin=margin)
     if not pooling:
@@ -217,8 +200,8 @@ def generate_best_f1(model_name, language, layer, data_type, gold=None, cosine=T
         candidate_and_score = combining_candidate_score(candidate_and_score, candidate_and_score_en_to_lang, pooling='max')
 
     restore_index(lang_sent_id, en_sent_id, candidate_and_score)
-    best_f1, threshold, best_recall, best_precision = bucc_optimize(candidate_and_score, gold, ngold=gold.count)
-    logger.info(f'optimized bucc f1: {best_f1}, threshold: {threshold}, best_f1: {best_recall}, best_precision: {best_precision}')
+    best_f1, threshold, best_recall, best_precision = bucc_optimize(candidate_and_score, gold)
+    logger.info(f'optimized bucc f1: {best_f1}, threshold: {threshold}, best_recall: {best_recall}, best_precision: {best_precision}')
     return best_f1, best_recall
 
 
@@ -230,7 +213,12 @@ def generate_best_f1_layers(model_name, language, layers, data_type, cosine=True
     gold = Gold(language, data_type)
     res = []
     for i in layers:
-        best_f1, best_recall = generate_best_f1(model_name, language, layer=i, data_type=data_type, gold=gold, cosine=cosine, margin=margin, pooling=pooling)
+        if pooling:
+            logger.info(f'evaluate on {model_name}, layer-{i} in {language}-en bi-{pooling} setting')
+        else:
+            logger.info(f'evaluate on {model_name}, layer-{i} in {language}-en setting')
+        embeddings_lang, embeddings_en = load_bucc_embeddings(language, model_name, layer=i, data_type=data_type)
+        best_f1, best_recall = generate_best_f1(embeddings_lang, embeddings_en, gold=gold, cosine=cosine, margin=margin, pooling=pooling)
         res.append([best_f1, best_recall])
     return res
 
@@ -238,7 +226,7 @@ def generate_best_f1_layers(model_name, language, layers, data_type, cosine=True
 
 def generate_gold_combined(model_name, language, layers, data_type, cosine=True, margin=True, bidirection=True, pooling='pooling', end=False):
     combined_candidate = []
-    dup_lang, dup_en = get_duplicate(language=language, data_type=data_type)
+    # dup_lang, dup_en = get_duplicate(language=language, data_type=data_type)
     gold = Gold(language=language, data_type=data_type)
 
     if pooling:
@@ -248,7 +236,7 @@ def generate_gold_combined(model_name, language, layers, data_type, cosine=True,
 
     for i in range(len(layers)):
         embeddings_lang, embeddings_en = load_bucc_embeddings(language, model_name, layers[i], data_type=data_type)
-        lang_sent_id, en_sent_id = filter_dup_embeddings(embeddings_lang, embeddings_en, dup_lang, dup_en)
+        lang_sent_id, en_sent_id = filter_dup_embeddings(embeddings_lang, embeddings_en, gold.dup_lang, gold.dup_en)
         candidate_and_score = generate_margin_k_similarity(embeddings_lang, embeddings_en, cosine=cosine)
 
         if not pooling:
@@ -260,12 +248,12 @@ def generate_gold_combined(model_name, language, layers, data_type, cosine=True,
         if not end:
             logger.info(f'layer-{layers[i]} in {language}-en bi-{pooling} setting')
             restore_index(lang_sent_id, en_sent_id, candidate_and_score)
-            best_f1, threshold, true_positive_count, best_precision = bucc_optimize(candidate_and_score, gold, ngold=gold.count)
+            best_f1, threshold, true_positive_count, best_precision = bucc_optimize(candidate_and_score, gold)
             logger.info(f'optimized bucc f1: {best_f1}, threshold: {threshold}, total true positive: {true_positive_count}, best_precision: {best_precision}')
 
             logger.info(f'layer-{layers[:i+1]} in {language}-en bi-{pooling} setting')
             combined_candidate = combining_candidate_score(candidate_and_score, combined_candidate)
-            best_f1, threshold, true_positive_count, best_precision = bucc_optimize(combined_candidate, gold,ngold=gold.count)
+            best_f1, threshold, true_positive_count, best_precision = bucc_optimize(combined_candidate, gold)
             logger.info(f'optimized bucc f1: {best_f1}, threshold: {threshold}, total true positive: {true_positive_count}, best_precision: {best_precision}')
         else:
             combined_candidate = combining_candidate_score(candidate_and_score, combined_candidate)
@@ -316,7 +304,7 @@ if __name__ == '__main__':
                         action="store_true",
                         help="Run or not.")
     parser.add_argument("--type",
-                        default='training',
+                        default='sample',
                         help='run on training data or sample data')
 
     args = parser.parse_args()
@@ -327,24 +315,20 @@ if __name__ == '__main__':
         BATCH_SIZE = 32
     else:
         BATCH_SIZE = 256
+    model_name = 'attXLM-R'
+    for language in ['fr']:
+        logger.info(f'{model_name} optimized on {language}-{data_type}')
+        embeds_lang, embeds_en = load_bucc_embeddings(language, model_name, data_type=data_type)
+        gold = Gold(language=language, data_type=data_type)
+        res = generate_best_f1(embeds_lang, embeds_en, gold=gold)
 
 
-    model_name = 'XLM-A'
-    extract_embeddings_save(model_name=model_name, languages=['de'], data_type=data_type, pool_type='mean', debug=False)
-    res = []
-    for language in ['zh', 'fr', 'ru', 'de']:
-        layer_res = generate_best_f1_layers(model_name, language, layers=[1, 5, 7, 8, 9, 12], data_type=data_type, pooling='max')
-        res.append(layer_res)
+    # extract_embeddings_save(model_name=model_name, languages=['de'], data_type=data_type, pool_type='mean', debug=False)
+    # res = []
+    # for language in ['zh', 'fr', 'ru', 'de']:
+    #     layer_res = generate_best_f1_layers(model_name, language, layers=[1, 5, 7, 8, 9, 12], data_type=data_type, pooling='max')
+    #     res.append(layer_res)
     logger.info(res)
-
-    # extract_embeddings(model_name=model_name, language='zh', debug=debug)
-    # evaluate_on_gold(model_name, language='zh', layers=MODEL_LAYER[model_name], debug=debug)
-    # for layer in layer_list[MODEL_LAYER[model_name]]:
-
-
-    # for layer in LAYER_LIST[MODEL_LAYER[model_name]]:
-    #     save_pic(['zh', 'fr', 'de', 'ru'], model_name=model_name, layer=layer, compression_method='pca', debug=True)
-    # extract_embeddings(model_name)
 
 
 

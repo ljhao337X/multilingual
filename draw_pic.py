@@ -4,7 +4,7 @@ import random
 from typing import List
 from PIL import Image, ImageDraw, ImageColor, ImageFont
 from sklearn.preprocessing import MinMaxScaler
-from evaluate import lang3_dict
+from bucc_dataset import lang3_dict
 
 lanuage_color_map = {'zh':'#FF0000', 'en':'#0000FF', 'ru':'#808080', 'jp':'#FF00FF', 'id':'#FFFF00', 'fr':'#008000', 'de':'#FF00FF'}
 bucc_color_map = {'zh':'#FF0000', 'en':'#0000FF', 'ru':'#808080', 'de':'#FFFF00', 'fr':'#008000'}

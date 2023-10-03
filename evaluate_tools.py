@@ -4,6 +4,9 @@ from bucc_dataset import load_bucc_embeddings, LAYER_LIST, Gold
 import pickle
 import logging
 logger = logging.getLogger(__name__)
+'''
+basic evaluation tools
+'''
 
 def EmbedLoad(fname, dim=1024, verbose=True, fp16=False):
     x = np.fromfile(fname, dtype=(np.float16 if fp16 else np.float32), count=-1)
@@ -83,7 +86,7 @@ def generate_margin_k_similarity(query, doc,  k=4, margin=True, cosine=True, gpu
     '''
     # assert k==1 or (margin and k>1), print('if use margin calulation, k>1 is needed')
     # cosine 需要l2 norm
-    print(f'query sent_num:{query.shape[0]}, doc sent_num:{doc.shape[0]}, margin:{k}')
+    print(f'query :{query.shape}, doc:{doc.shape}, margin:{k}')
 
     dimension = doc.shape[1]
     

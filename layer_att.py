@@ -107,11 +107,11 @@ class LAYER_ATT(nn.Module):
 
 
 class Trainer:
-    def __init__(self, pretrain_model, batch_size=32, lr=0.001, device=DEVICE):
-        self.model_name = pretrain_model+'_layer_att'
+    def __init__(self, model, tokenizer, batch_size=32, lr=0.001, device=DEVICE):
+        self.model_name = model.backbone_name+'_layer_att'
         self.device = device
-        self.model = LAYER_ATT(pretrain_model).to(self.device) # remember this
-        self.tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH[pretrain_model])
+        self.model = model.to(device)
+        self.tokenizer = tokenizer
         self.batch_size = batch_size
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
         self.loss_fn = nn.CrossEntropyLoss()
@@ -138,7 +138,7 @@ class Trainer:
         top1 = AverageMeter('Acc@1', ':6.2f')
         top5 = AverageMeter('Acc@5', ':6.2f')
 
-        for i in range(epoch):
+        for e in range(epoch):
             start = time.time()
             best_acc = 90
 
@@ -169,8 +169,9 @@ class Trainer:
                 time_mark = time.strftime("%m-%d-%H-%M-%S")
                 model_path = f'./model_{time_mark}.pt'
                 torch.save(self.model, f'./model_{time_mark}.pt')
+                logger.info(f'save model {model_path} ... ')
 
-            print(f"Epoch:{i + 1}: {batch_time}, {losses}, {top1}, {top5}")
+            logger.info(f"Epoch:{e + 1}: {batch_time}, {losses}, {top1}, {top5}")
 
         return model_path
 
@@ -180,39 +181,47 @@ def att_inference(sents:list, model, tokenizer, batch_size=256, device=DEVICE):
     batch_num = -1 * (-sents_num // batch_size)  # 向上除法
 
     res = []
-    for i in tqdm(range(batch_num), desc='Batch'):
-        start_index = i*batch_size
-        end_index = min(start_index+batch_size, sents_num)
-        batch = tokenizer(sents[start_index:end_index], padding=True, return_tensors='pt').to(device)
-        embeds = model(**batch) # [sent, batch]
-        res.append(embeds.cpu().numpy().astype(np.float32))
-    
+    with torch.no_grad():  # this is important
+        for i in tqdm(range(batch_num), desc='Batch'):
+            start_index = i*batch_size
+            end_index = min(start_index+batch_size, sents_num)
+            batch = tokenizer(sents[start_index:end_index], padding=True, return_tensors='pt').to(device)
+            embeds = model(batch) # [sent, batch]
+            res.append(embeds.cpu().numpy().astype(np.float32))
+
+    if len(res) == 1:
+        return res[0]
     return np.vstack(res)
 
 
-def att_extract_save(model, tokenizer, languages=['zh'], data_type='training'):
+def att_extract_save(model, tokenizer, languages=['fr'], data_type='training', device=DEVICE):
+    model = model.to(device)
+    model.eval()
     for language in languages:
         sentences_lang, sentences_en = get_bucc_sentence(language=language, data_type=data_type)
         logger.info(f'read bucc {data_type} file {language}-en, total lines:{len(sentences_lang), len(sentences_en)}')
 
-        embeds_lang = att_inference(sentences_lang, model=model, tokenizer=tokenizer)
-        embeds_en = att_inference(sentences_en, model=model, tokenizer=tokenizer)
+        embeds_lang = att_inference(sentences_lang, model=model, tokenizer=tokenizer, device=device)
+        embeds_en = att_inference(sentences_en, model=model, tokenizer=tokenizer, device=device)
 
+        print(f'embeds_{language}: {embeds_lang.shape}, embeds_en: {embeds_en.shape}')
         file_folder = save_embedding_file("att"+model.backbone_name, embeds_lang, embeds_en, data_type=data_type, language=language, att=True)
-        del embeds_lang, embeds_lang
+        del embeds_lang, embeds_en
 
         logger.info(f'saved file to {file_folder}')
     return
 
 if __name__ == '__main__':
     backbone_model = 'XLM-R'
-    
-    trainer = Trainer(pretrain_model='XLM-R')
-    model_path = trainer.train(['zh', 'fr', 'de', 'ru'], epoch=25)
+    # # training
+    # model = LAYER_ATT(backbone_model) # remember this
+    # tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH[backbone_model])
+    # trainer = Trainer(model, tokenizer)
+    # model_path = trainer.train(['zh', 'fr', 'de', 'ru'], epoch=30)
 
-    model = torch.load(model_path)
+    model = torch.load('./model_10-02-23-12-50.pt')
     tokenizer = AutoTokenizer.from_pretrained(model.backbone_path)
-    att_extract_save(model, tokenizer, data_type='training')
+    att_extract_save(model, tokenizer, data_type='sample')
     
 
     # embeddings_lang, embeddings_en = load_att_embeddings(language='zh', model_name="att"+backbone_model, data_type='sample')

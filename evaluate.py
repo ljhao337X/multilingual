@@ -1,24 +1,15 @@
-import faiss
 import torch
 import numpy as np
 import os
 import logging
 from transformers import AutoModel, AutoTokenizer, AutoConfig
 from tqdm import tqdm
+from bucc_dataset import get_bucc_sentence, save_embedding_file
 # import faiss
 from typing import List, AnyStr
 from collections import Counter
 
 logger = logging.getLogger(__name__)
-lang3_dict = {'ara': 'ar', 'heb': 'he', 'vie': 'vi', 'ind': 'id',
-              'jav': 'jv', 'tgl': 'tl', 'eus': 'eu', 'mal': 'ml', 'tam': 'ta',
-              'tel': 'te', 'afr': 'af', 'nld': 'nl', 'eng': 'en', 'deu': 'de',
-              'ell': 'el', 'ben': 'bn', 'hin': 'hi', 'mar': 'mr', 'urd': 'ur',
-              'tam': 'ta', 'fra': 'fr', 'ita': 'it', 'por': 'pt', 'spa': 'es',
-              'bul': 'bg', 'rus': 'ru', 'jpn': 'jp', 'kat': 'ka', 'kor': 'ko',
-              'tha': 'th', 'swh': 'sw', 'cmn': 'zh', 'kaz': 'kk', 'tur': 'tr',
-              'est': 'et', 'fin': 'fi', 'hun': 'hu', 'pes': 'fa', 'aze': 'az',
-              'lit': 'lt', 'pol': 'pl', 'ukr': 'uk', 'ron': 'ro'}
 def logger_init():
     logger.setLevel(level=logging.INFO)
 
@@ -171,7 +162,8 @@ def cls_pool_embedding(all_layer_outputs):
     return sent_embeds  # [B, D]
 
 
-def run_inference(sentences:list, model_name, config, model, tokenizer:AutoTokenizer, pool_type='cls', batch_size=BATCH_SIZE, to_en=False, debug=False):
+def run_inference(sentences:list, model_name, config, model, tokenizer:AutoTokenizer, pool_type='cls',
+                  batch_size=BATCH_SIZE, to_en=False, debug=False):
     '''
     :param sentences:
     :param model_name:
@@ -243,6 +235,24 @@ def run_inference(sentences:list, model_name, config, model, tokenizer:AutoToken
     # torch.cuda.empty_cache()
     return all_embeds
 
+
+def extract_embeddings_save(model_name='XLM-R', languages=['zh'], pool_type='cls', data_type='training', debug=True):
+    config, model, tokenizer = load_model(model_path=MODEL_PATH[model_name], device=device, output_hidden_states=True)
+
+    for language in languages:
+        sentences_lang, sentences_en = get_bucc_sentence(language=language, data_type=data_type)
+        logger.info(f'read bucc {data_type} file {language}-en, total lines:{len(sentences_lang), len(sentences_en)}')
+        all_embeds_lang = run_inference(sentences_lang, model_name, config, model, tokenizer, language,
+                                        pool_type=pool_type, debug=debug)
+        all_embeds_en = run_inference(sentences_en, model_name, config, model, tokenizer, 'en', pool_type=pool_type,
+                                      debug=debug)
+
+        file_folder = save_embedding_file(model_name=model_name, embeds_lang=all_embeds_lang, embeds_en=all_embeds_en,
+                                          data_type=data_type, language=language)
+        del all_embeds_lang, all_embeds_en
+
+        logger.info(f'saved file to {file_folder}')
+    return
 
 
 if __name__ == '__main__':
